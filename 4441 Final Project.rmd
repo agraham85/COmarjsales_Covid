@@ -1,0 +1,49 @@
+---
+title: "Final Project"
+author: "Navan Powers & Andrew Graham"
+date: "8/10/2021"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(scales)
+library(lubridate)
+options(dplyr.summarise.inform = FALSE)
+
+```
+
+```{r}
+dat<-read.csv("0521_MJSalesHistoricalReport.csv")
+dat_trim<-data.frame(select(dat,Line,Medical,Retail,Total))
+
+
+# dat_trim<-ts(dat_trim,frequency = 12,start = 2014)
+# dat_trim<-data.frame(dat_trim)
+```
+
+```{r}
+
+# g<-ggplot(dat_trim,aes(Line,Total,group=1))+geom_line()+ylim(0,250000)
+g<-ggplot(dat_trim,aes(x=Line))+
+  geom_line(aes(y=Medical),color="Red") +
+  geom_line(aes(y=Retail),color="Blue") +
+  geom_line(aes(y=Total),color="Green") + ylim(0,250000)+ylab("Sales")
+# g<-ggplot(dat_trim,aes(Month,Total,group=1))+geom_line()
+# g+ylim(0,250000)
+g+scale_y_continuous(labels=scales::dollar_format())
+
+
+# g<-ggplot(dat_trim,aes(x=dat_trim$Month,y=dat_trim$Retail,group=1))+geom_line()
+# g
+```
+
+```{r}
+
+```
