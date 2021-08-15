@@ -15,35 +15,191 @@ library(ggplot2)
 library(ggpubr)
 library(scales)
 library(lubridate)
+library(strucchange)
+library(sjmisc)
+library(zoo)
+library(knitr)
+library(markdown)
 options(dplyr.summarise.inform = FALSE)
 
 ```
 
 ```{r}
+#Import and Clean Data for All Colorado
 dat<-read.csv("0521_MJSalesHistoricalReport.csv")
-dat_trim<-data.frame(select(dat,Line,Medical,Retail,Total))
+dat.trim<-data.frame(select(dat,Month,Medical,Retail,Total))
+
+#Set Value types
+dat.CO$Medical <- as.numeric(dat.trim$Medical)
+dat.CO$Retail <- as.numeric(dat.trim$Retail)
+dat.CO$Total <- as.numeric(dat.trim$Total)
+dat.CO$Month <- as.Date(dat.trim$Month, format = "%m/%d/%Y")
+
+#Convert Data to Tall format
+dat.CO.long<-dat.CO %>%
+  pivot_longer(!Month, names_to = "Type", values_to = "Sales")
+
+#Date of Pandemic Lockdown Start
+PStart <- as.Date("2020-03-01")
+PStart.point <- which(grepl(PStart, dat.CO$Month))
+
+#Confidence interval for Chow
+psig <- .05
+```
 
 
-# dat_trim<-ts(dat_trim,frequency = 12,start = 2014)
-# dat_trim<-data.frame(dat_trim)
+```{r}
+#plot Initial Data
+g<-ggplot(dat.CO.long,aes(x=Month, y=Sales, color = Type ))+geom_line()+
+  scale_y_continuous(labels=scales::dollar_format(),limits=c(0,250000000))+
+  ggtitle("Colorado Marijuana Sales")
+g
+
+
+#Plot All CO data with March Lockdown Line at March 2021
+g<-g+geom_vline(xintercept=PStart)+
+  geom_text(aes(x=PStart, label="Post-Lockdowns", y=230000000), colour="blue", angle=90, vjust = 1.2, size=2)+
+  geom_text(aes(x=PStart, label="Pre-Lockdowns", y=230000000), colour="red", angle=90, vjust = -1, size=2)+
+  geom_text(aes(x=PStart, label="March - 2021", y=10), colour="black", size=3)
+
+g
+```
+
+
+#Split Data into Retail and Medical then perform Chow test to determine if there is a break point...
+#Null hypothesis being that one regression line fits the data better than two divided at the break point
+
+```{r}
+#Import Retail as Time Series
+ts_Rsales <- ts(dat.CO$Retail,frequency=12,start=c(2014,1))
+plot(ts_Rsales)
+
+#De-seasonalize the Data
+dec_Rsales <- decompose(ts_Rsales,"additive")
+adj_Rsales <- ts_Rsales - dec_Rsales$seasonal
+plot(adj_Rsales)
+
+
+#Run Chow Test  at point 75 (March 2020)
+n<- length(adj_Rsales)
+Trend <- c(1:n)
+sctest(adj_Rsales~Trend, type = "Chow", point = PStart.point)
+
+#P-value really low,  evidence of change
 ```
 
 ```{r}
+#Import Medical as Time Series
+ts_Msales <- ts(dat.CO$Medical,frequency=12,start=c(2014,1))
+plot(ts_Msales)
 
-# g<-ggplot(dat_trim,aes(Line,Total,group=1))+geom_line()+ylim(0,250000)
-g<-ggplot(dat_trim,aes(x=Line))+
-  geom_line(aes(y=Medical),color="Red") +
-  geom_line(aes(y=Retail),color="Blue") +
-  geom_line(aes(y=Total),color="Green") + ylim(0,250000)+ylab("Sales")
-# g<-ggplot(dat_trim,aes(Month,Total,group=1))+geom_line()
-# g+ylim(0,250000)
-g+scale_y_continuous(labels=scales::dollar_format())
+#De-seasonalize the Data
+dec_Msales <- decompose(ts_Msales,"additive")
+adj_Msales <- ts_Msales - dec_Msales$seasonal
+plot(adj_Msales)
 
 
-# g<-ggplot(dat_trim,aes(x=dat_trim$Month,y=dat_trim$Retail,group=1))+geom_line()
-# g
+#Run Chow Test  at point 75 (March 2020)
+n<- length(adj_Msales)
+Trend <- c(1:n)
+s<-sctest(adj_Msales~Trend, type = "Chow", point = PStart.point)
+s
+#P-value really low,  evidence of change
+
 ```
+
+#Import County Data
+
+
 
 ```{r}
+#import and Clean Retail Counties
+d<-read.csv("Marijuana_County_Retail.csv")
+d<-set_na(dat.county.retail, na = c("NR"))
+d$Month <-as.Date(dat.trim$Month, format = "%m/%d/%Y")
+for(i in 2:ncol(d)){
+  d[,i] <- as.numeric(d[,i])
+}
+dat.county.retail<-d
 
+#import and Clean Medical Counties
+d<-read.csv("Marijuana_County_Medical.csv")
+d<-set_na(dat.county.retail, na = c("NR"))
+d$Month <-as.Date(dat.trim$Month, format = "%m/%d/%Y")
+for(i in 2:ncol(d)){
+  d[,i]<as.numeric(d[,i])
+}
+dat.county.medical<-d
+
+
+#dat.county.retail$no_data <- rowSums(is.na(dat.county.retail))
 ```
+
+
+#Analyze Retail and Medical into p-Chart
+```{r}
+#Retail  Find P-value on chow test for all counties with at least a year of data before March 2020
+Rcol <- colnames(dat.county.retail)
+
+df <- data.frame(County=character(),DataPoints=integer(),PValue=double(),Reject_Null=logical())
+
+n<- length(dat.county.retail$Month)
+Trend <- c(1:n)
+
+for (i in 2:ncol(dat.county.retail)){
+  d <- dat.county.retail[,i]
+  na_to_point <- sum(is.na(d[1:75]))
+  adj_point <- PStart.point-na_to_point
+  
+  df[i-1,1] <- Rcol[i]
+  df[i-1,2] <- n - sum(is.na(d[1:n]))
+  
+  if(adj_point < 12){
+    df[i-1,3] <- NA
+    df[i-1,4] <- FALSE
+  } else {
+    t <- ts(d,frequency=12)
+    s <- sctest(t~Trend, type = "Chow", point = adj_point)
+    df[i-1,3] <- s$p.value
+    df[i-1,4] <- s$p.value < psig
+  }
+
+}
+
+df
+
+#sum(df$Reject_Null)/(length(Rcol)-1-sum(is.na(df$PValue)))
+#ncol(dat.county.retail)
+```
+```{r}
+#Medical  Find P-value on chow test for all counties with at least a year of data before March 2020
+Rcol <- colnames(dat.county.medical)
+
+df <- data.frame(County=character(),DataPoints=integer(),PValue=double(),Reject_Null=logical())
+
+n<- length(dat.county.medical$Month)
+Trend <- c(1:n)
+
+for (i in 2:ncol(dat.county.medical)){
+  d <- dat.county.medical[,i]
+  na_to_point <- sum(is.na(d[1:75]))
+  adj_point <- PStart.point-na_to_point
+  
+  df[i-1,1] <- Rcol[i]
+  df[i-1,2] <- n - sum(is.na(d[1:n]))
+  
+  if(adj_point < 12){
+    df[i-1,3] <- NA
+    df[i-1,4] <- FALSE
+  } else {
+    t <- ts(d,frequency=12)
+    s <- sctest(t~Trend, type = "Chow", point = adj_point)
+    df[i-1,3] <- s$p.value
+    df[i-1,4] <- s$p.value < psig
+  }
+
+}
+
+df
+```
+
