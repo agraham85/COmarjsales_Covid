@@ -1,0 +1,26 @@
+```{r}
+#Import and Clean Data for All Colorado during pandemic time period
+dat<-read.csv("pandemic.csv")
+dat.pan<-data.frame(select(dat,Month,Medical,Retail,Total,Covid.Cases))
+dat.z<-data.frame(select(dat,Month,Medical,Retail,Total,Covid.Cases))
+#scalar for plotting covid numbers
+scl=150
+#scale covid data for plotting
+dat.z$Covid.Cases <- dat.pan$Covid.Cases*scl
+#Set month data as date type
+dat.z$Month <- as.Date(dat.pan$Month, format = "%m/%d/%Y")
+#Convert Data to Tall format
+dat.z.long<-dat.z %>%
+  pivot_longer(!Month, names_to = "Type", values_to = "Sales")
+
+#plot Pandemic-Time Data
+g<-ggplot(dat.z.long,aes(x=Month, y=Sales)) + 
+            geom_line(aes(color = Type, linetype = Type %in% c("Covid.Cases"))) + 
+            scale_linetype_manual(values = c("TRUE" = "twodash", "FALSE" = "solid")) +
+            scale_y_continuous(labels=scales::dollar_format(),limits=c(0,250000000),
+                               sec.axis = sec_axis(~./scl,name = "Covid Cases",labels = comma)) + 
+            guides(linetype = "none", size = "none") +
+            scale_color_manual(values = c("purple", "red", "blue","black")) +
+            ggtitle("Colorado Marijuana Sales After Covid Start")
+g
+```
