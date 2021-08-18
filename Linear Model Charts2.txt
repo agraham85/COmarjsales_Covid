@@ -1,0 +1,70 @@
+```{r}
+#Import and Clean Data for All Colorado
+dat<-read.csv("0521_MJSalesHistoricalReport.csv")
+dat.trim<-data.frame(select(dat,Month,Medical,Retail,Total))
+dat.CO<-data.frame(select(dat,Month,Medical,Retail,Total))
+#Set Value types
+dat.CO$Medical <- as.numeric(dat.trim$Medical)
+dat.CO$Retail <- as.numeric(dat.trim$Retail)
+dat.CO$Total <- as.numeric(dat.trim$Total)
+dat.CO$Month <- as.Date(dat.trim$Month, format = "%m/%d/%Y")
+#Convert Data to Tall format
+dat.CO.long<-dat.CO %>%
+  pivot_longer(!Month, names_to = "Type", values_to = "Sales")
+#Date of Pandemic Lockdown Start
+PStart <- as.Date("2020-03-01")
+PStart.point <- which(grepl(PStart, dat.CO$Month))
+#Confidence interval for Chow
+psig <- .05
+```
+
+```{r}
+m.trim<-lm(Retail~Month,data=dat.CO)
+pre.trim<-lm(Retail~Month,data=subset(dat.CO,Month<as.Date("2020-3-1")))
+post.trim<-lm(Retail~Month,data=subset(dat.CO,Month>=as.Date("2020-3-1")))
+# summary(m.trim)
+# summary(pre.trim)
+# summary(post.trim)
+m.trim$coefficients[1]
+m.trim$coefficients[2]
+pre.trim$coefficients[1]
+pre.trim$coefficients[2]
+post.trim$coefficients[1]
+post.trim$coefficients[2]
+#plot Initial Data
+g<-ggplot(dat.CO.long,aes(x=Month, y=Sales, color = Type ))+geom_line()+xlab("")+
+  scale_y_continuous(labels=scales::dollar_format(),limits=c(0,250000000))+
+  scale_color_manual(values = c("red", "blue","black")) +
+  ggtitle("Colorado Marijuana Sales")
+g
+
+#linear model for total range Retail
+g+stat_smooth(data=subset(dat.CO.long,Type=="Retail"),method = "lm", formula=y~x,se = FALSE)+
+  # stat_regline_equation(data=subset(dat.CO.long,Type=="Retail"),label.y = 225000000,aes(label = ..eq.label..))+
+  stat_regline_equation(data=subset(dat.CO.long,Type=="Retail"),label.y = 250000000,aes(label = ..rr.label..))
+  # +labs(subtitle=paste("Slope = ", round(m.trim$coefficients[2],0)))
+
+#linear model for pre-covid range Retail
+g+stat_smooth(data=subset(dat.CO.long,Type=="Retail" & Month<=as.Date("2020-3-1")), method = "lm", formula=y~x,se = FALSE)+
+  # stat_regline_equation(data=subset(dat.CO.long,Type=="Retail" & Month<as.Date("2020-3-1")),label.y = 225000000,aes(label = ..eq.label..))+
+  stat_regline_equation(data=subset(dat.CO.long,Type=="Retail" & Month<=as.Date("2020-3-1")),label.y = 250000000,aes(label = ..rr.label..))
+  # +labs(subtitle=paste("Slope = ", round(pre.trim$coefficients[2],0)))
+
+#linear model for covid range Retail
+g+stat_smooth(data=subset(dat.CO.long,Type=="Retail" & Month>=as.Date("2020-3-1")), method = "lm", formula=y~x,se = FALSE)+
+  # stat_regline_equation(data=subset(dat.CO.long,Type=="Retail" & Month>=as.Date("2020-3-1")),label.y = 225000000,aes(label = ..eq.label..))+
+  stat_regline_equation(data=subset(dat.CO.long,Type=="Retail" & Month>=as.Date("2020-3-1")),label.y = 250000000,aes(label = ..rr.label..))
+  # +labs(subtitle=paste("Slope = ", round(post.trim$coefficients[2],0)))
+
+#piecewise linear model for pre-covid and covid ranges Retail
+g<-g+stat_smooth(data=subset(dat.CO.long,Type=="Retail" & Month<=as.Date("2020-3-1")), method = "lm", formula=y~x,se = FALSE)+
+stat_smooth(data=subset(dat.CO.long,Type=="Retail" & Month>=as.Date("2020-3-1")), method = "lm", formula=y~x,se = FALSE)
+
+
+#Plot All CO data with March Lockdown Line at March 2021
+g<-g+geom_vline(xintercept=PStart)+
+  geom_text(aes(x=PStart, label="Post-Lockdowns", y=230000000), colour="blue", angle=90, vjust = 1.2, size=2.5)+
+  geom_text(aes(x=PStart, label="Pre-Lockdowns", y=230000000), colour="red", angle=90, vjust = -1, size=2.5)+
+  geom_text(aes(x=PStart, label="March - 2021", y=10), colour="black", size=3)
+g
+```
